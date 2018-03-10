@@ -30,7 +30,7 @@ def enumerateable(obj):
     try:
         _ = (e for e in obj)
         return obj
-    except AttributeError:
+    except TypeError:
         return [obj]
 
 
@@ -338,9 +338,9 @@ class SheduleServer:
         G = self._graph
         task = G.node[task_id]['task']
 
-        require = task.require()
+        require = enumerateable(task.require())
 
-        if require is None:
+        if len(require) == 0:
             return []
 
         index = [None] * len(require)
@@ -352,10 +352,11 @@ class SheduleServer:
 
         for i, r in enumerate(require):
             r, optional = SheduleServer._is_optional(r)
+            self._injector.inject(r)
             r_id = taskid(r)
             if r_id in pre_index:
                 pre_node = pre_index[r_id]
-                if isFinish(pre_node):
+                if isFinish(pre_node) and 'exception' not in pre_node:
                     index[i] = pre_node['output']
                 elif not optional:
                     raise UnsatisfiedRequirementException(
@@ -363,7 +364,7 @@ class SheduleServer:
                     )
             else:
                 raise UnsatisfiedRequirementException(
-                        '%s is not in predecessors of %s' % (r_id, task_id))
+                        '%s is not in predecessors of %s expected: %s' % (r_id, task_id, str(pre_index)))
 
         return index
 
@@ -444,7 +445,7 @@ class SheduleServer:
         for s in self._graph.successors(t_id):
             add = True
             for ps in self._graph.predecessors(s):
-                if not isFinish(ps):
+                if not isFinish(self._graph.node[ps]):
                     add = False
                     break
             if add:
@@ -480,7 +481,7 @@ class SheduleServer:
         t_id = self._buffer.pop()
 
         try:
-            return self._serialize_task(t_id)
+            return [self._serialize_task(t_id)]
         except UnsatisfiedRequirementException:
             trace = traceback.format_exc()
             self._logger.error(
@@ -488,6 +489,8 @@ class SheduleServer:
             )
             node = self._graph.node[t_id]
             node['exception'] = trace
+
+        return []
 
     def startup(self):
         return []
@@ -502,7 +505,7 @@ class SheduleServer:
                 self._logger.error(
                     'id is missing. Skip message %s' % str(msg)
                 )
-                return [self._emit_task()]
+                return self._emit_task()
 
             t_id = result['id']
 
@@ -510,11 +513,11 @@ class SheduleServer:
                 self._logger.error(
                     'Unknown task id: %s. Skip.' % t_id
                 )
-                return [self._emit_task()]
+                return self._emit_task()
 
             self._finish_task(result)
 
-            return [self._emit_task()]
+            return self._emit_task()
         else:
             self._logger.error(
                 'Unknown message: %s' % str(msg)
@@ -545,7 +548,7 @@ class OpenTarget:
             if not os.path.exists(directory):
                 os.makedirs(directory)
 
-        self.fd = self._opener.open(path, mode)
+        self.fd = self.opener._open(path, mode)
 
         if self.service is not None:
             return self.service(self.fd)
@@ -653,7 +656,9 @@ class Worker:
             if path is None:
                 continue
             r.path = path
-            inList[i] = self._rebuildTarget(r)
+            target = self._rebuildTarget(r)
+            target.mode = 'r'
+            inList[i] = target
 
         return inList
 
@@ -675,7 +680,7 @@ class Worker:
         task.output = makeEmitter(out)
 
         inp = self._build_input(
-            msg['input']
+            task, msg['input']
         )
         task.input = makeEmitter(inp)
 
@@ -723,3 +728,6 @@ class Worker:
             self._logger.error(
                 'Unknown msg %s' % str(msg)
             )
+
+    def shutdown(self):
+        pass
