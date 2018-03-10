@@ -1,5 +1,5 @@
 from networkx.drawing.nx_pydot import write_dot
-import task
+from . import task
 import json
 
 

@@ -1,15 +1,15 @@
 import networkx as nx
-from task import Optional, UnsatisfiedRequirementException
-from task import Parameter, ParameterInjector, stats
-from utils import containerHash
+from .task import Optional, UnsatisfiedRequirementException
+from .task import Parameter, ParameterInjector, stats
+from .utils import containerHash
 import os
 from tqdm import tqdm
 import logging
 import traceback
 import pika
 import json
-from storage import DistributedStorage
-import target as t
+from .storage import DistributedStorage
+from . import target as t
 import ast
 from glob import iglob
 import random

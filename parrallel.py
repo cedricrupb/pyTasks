@@ -1,7 +1,7 @@
-from task import Task, TaskPlanner
-from task import TaskExecutor
-import task as T
-from utils import containerHash
+from .task import Task, TaskPlanner
+from .task import TaskExecutor
+from . import task as T
+from .utils import containerHash
 import networkx as nx
 import networkx.algorithms.dag as dag
 import math

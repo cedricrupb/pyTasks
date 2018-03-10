@@ -1,4 +1,4 @@
-from task import Parameter
+from .task import Parameter
 import os
 from os.path import dirname
 import pickle

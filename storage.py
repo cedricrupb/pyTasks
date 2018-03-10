@@ -1,4 +1,4 @@
-from task import Parameter
+from .task import Parameter
 import pysftp
 import os
 from tqdm import tqdm

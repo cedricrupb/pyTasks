@@ -4,7 +4,7 @@ import networkx.algorithms.dag as dag
 import time
 import traceback
 from tqdm import tqdm
-from utils import containerHash
+from .utils import containerHash
 from inspect import signature
 
 
