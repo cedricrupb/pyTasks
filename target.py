@@ -107,22 +107,22 @@ class LocalTarget(FileTarget):
 
     def __init__(self, path, service=PickleService):
         super().__init__(path)
-        self.__service = service
+        self.service = service
 
     def __enter__(self):
         mode = self.mode
-        if self.__service.isByte(self.__service) and 'b' not in mode:
+        if self.service.isByte(self.service) and 'b' not in mode:
             self.mode += 'b'
-        return self.__service(super().__enter__())
+        return self.service(super().__enter__())
 
     def __getstate__(self):
         D = super().__getstate__()
-        D['service'] = self.__service
+        D['service'] = self.service
         return D
 
     def __setstate__(self, state):
         super().__setstate__(state)
-        self.__service = state['service']
+        self.service = state['service']
 
 
 class CacheService:
