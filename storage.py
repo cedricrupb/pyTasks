@@ -61,15 +61,26 @@ class AutoSend:
 
         return exit
 
+    def __getattr__(self, name):
+        return getattr(self._flo, name)
+
+    def close(self):
+        self._flo.close()
+        self._send()
+
 
 class DistributedStorage:
     cache_dir = Parameter('')
     ftp_server = Parameter('')
     ftp_user = Parameter('')
     ftp_pwd = Parameter('')
+    ftp_prefix = Parameter('')
 
     def __path(self, path):
         return os.path.join(self.cache_dir.value, path)
+
+    def __rpath(self, path):
+        return os.path.join(self.ftp_prefix.value, path)
 
     def __connect(self):
         return pysftp.Connection(
@@ -80,6 +91,7 @@ class DistributedStorage:
 
     def __syncPath(self, remote_path, mode):
         local_path = self.__path(remote_path)
+        remote_path = self.__rpath(remote_path)
 
         if os.path.isfile(local_path):
             return local_path
@@ -108,12 +120,13 @@ class DistributedStorage:
 
     def open(self, path, mode):
         local_path = self.__syncPath(path, mode)
+        remote_path = self.__rpath(path)
 
         out = open(local_path, mode)
 
         if 'w' in mode:
             out = AutoSend(
-                out, local_path, path, self.ftp_server.value,
+                out, local_path, remote_path, self.ftp_server.value,
                 self.ftp_user.value, self.ftp_pwd.value
             )
 

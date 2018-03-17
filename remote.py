@@ -617,6 +617,10 @@ class Worker:
                     'ftp_pwd': ftp_cfg['password']
                 }
             }
+
+            if 'prefix' in ftp_cfg:
+                cfg['DistributedStorage']['ftp_prefix'] = ftp_cfg['prefix']
+
             self._ftp = DistributedStorage()
             ParameterInjector(cfg).inject(self._ftp)
 
