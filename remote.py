@@ -51,11 +51,18 @@ def isFinish(taskNode):
            or taskNode['output'].exists()
 
 
-def buildRegistry():
+def buildRegistry(prefix=None):
     registry = {}
 
-    for f in iglob('*.py'):
-        module = os.path.splitext(os.path.basename(f))[0]
+    module_prefix = '.'
+    pattern = '*.py'
+
+    if prefix is not None:
+        pattern = os.path.join(prefix, pattern)
+        module_prefix = os.path.split(prefix)[1] + '.'
+
+    for f in iglob(pattern):
+        module = module_prefix + os.path.splitext(os.path.basename(f))[0]
         names = []
         with open(f, 'r') as fi:
             par = ast.parse(fi.read())
@@ -66,14 +73,15 @@ def buildRegistry():
                     continue
 
                 names.append(node.name)
-        try:
-            helper = __import__(module, globals(), locals(),
-                                names)
+        if len(names) > 0:
+            try:
+                helper = __import__(module, globals(), locals(),
+                                    names)
 
-            for name in names:
-                registry[name] = helper.__dict__[name]
-        except ImportError:
-            print(traceback.format_exc())
+                for name in names:
+                    registry[name] = helper.__dict__[name]
+            except ImportError:
+                print(traceback.format_exc())
 
     return registry
 
