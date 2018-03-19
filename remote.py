@@ -112,6 +112,8 @@ class MQHandler:
             self._logger_level()
         )
 
+        print('Setup logger')
+
         formatter = logging.Formatter(
                         '%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
@@ -129,7 +131,7 @@ class MQHandler:
         ch.setFormatter(formatter)
         self._logger.addHandler(ch)
 
-    def connect(self):
+    def _connect(self):
         self._logger.info('Connecting to %s', self._config['server'])
 
         parameter = pika.ConnectionParameters(
@@ -162,6 +164,7 @@ class MQHandler:
             queue=self._config['sendQueue']
         )
 
+    def _consume(self):
         self._logger.info('Init reactor')
         react = self._reactor.startup()
         for r in enumerateable(react):
@@ -172,6 +175,23 @@ class MQHandler:
         )
 
         self._channel.start_consuming()
+
+    def connect(self):
+        self._connect()
+        self._consume()
+
+    def _publish(self, msg):
+        self._channel.basic_publish(exchange=self._config['exchange'],
+                                    routing_key=self._config['sendQueue'],
+                                    body=msg)
+
+    def _publishAndReconnect(self, msg):
+        try:
+            self._publish(msg)
+        except pika.exception.ConnectionClosed:
+            self._logger.debug('Reconnect to queue')
+            self._connect()
+            self._publishAndReconnect(msg)
 
     def sendMsg(self, msg):
         if self._channel is None or not self._channel.is_open:
@@ -184,9 +204,7 @@ class MQHandler:
                                           delivery_mode=2)
 
         msg = json.dumps(msg)
-        self._channel.basic_publish(exchange=self._config['exchange'],
-                                    routing_key=self._config['sendQueue'],
-                                    body=msg)
+        self._publishAndReconnect(msg)
         self._logger.info('Send: %s' % msg)
 
     def consume_msg(self, ch, method, properties, body):
@@ -197,6 +215,7 @@ class MQHandler:
         try:
             react = self._reactor.react(obj)
         except Exception:
+            traceback.print_exc()
             self._channel.basic_nack(delivery_tag=method.delivery_tag)
             return
 
@@ -294,7 +313,7 @@ class SheduleServer:
             self._logger.addHandler(fh)
 
         ch = logging.StreamHandler()
-        ch.setLevel(logging.ERROR)
+        ch.setLevel(logging.DEBUG)
         ch.setFormatter(formatter)
         self._logger.addHandler(ch)
 
@@ -376,16 +395,22 @@ class SheduleServer:
 
         return index
 
+    @staticmethod
+    def _relative_path(path):
+        if os.path.isabs(path):
+            f = os.path.basename(path)
+            rel = os.path.dirname(path)
+            rel = os.path.basename(os.path.normpath(rel))
+            return os.path.join('.', rel, f)
+        return path
+
     def _cp_input(self, output):
         try:
             path = output.path
 
-            if os.path.isabs(path):
-                raise UnsatisfiedRequirementException(
-                    'Path on server has to be relative (%s)' % path
-                )
-
-            ftp_path = os.path.join(self.ftp_dir.value, path)
+            ftp_path = os.path.join(self.ftp_dir.value,
+                                    SheduleServer._relative_path(path)
+                                    )
 
             if not (os.path.exists(ftp_path)
                     and os.path.samefile(path, ftp_path)):
@@ -469,7 +494,7 @@ class SheduleServer:
         if 'exception' in msg:
             t_node['exception'] = msg['exception']
             self._logger.error(
-                t_node['exception']
+                'Error for task [%s]: %s' % (t_id, t_node['exception'])
             )
         else:
             t_node['finish'] = True
@@ -483,29 +508,32 @@ class SheduleServer:
         self._update_buffer(t_id)
 
     def _emit_task(self):
-        if len(self._buffer) == 0:
-            return None
+        while len(self._buffer) > 0:
+            t_id = self._buffer.pop()
 
-        t_id = self._buffer.pop()
-
-        try:
-            return [self._serialize_task(t_id)]
-        except UnsatisfiedRequirementException:
-            trace = traceback.format_exc()
-            self._logger.error(
-                'Cannot serialize task %s: %s' % (t_id, trace)
-            )
-            node = self._graph.node[t_id]
-            node['exception'] = trace
+            try:
+                return [self._serialize_task(t_id)]
+            except UnsatisfiedRequirementException:
+                trace = traceback.format_exc()
+                self._logger.error(
+                    'Cannot serialize task %s: %s' % (t_id, trace)
+                )
+                node = self._graph.node[t_id]
+                node['exception'] = trace
 
         return []
 
     def startup(self):
+        self._logger.info('Startup server')
         return []
 
     def react(self, msg):
         if 'handshake' in msg:
-            return self._emit_task()
+            self._logger.info('New handshake of worker. Emit msg')
+            response = []
+            for _ in range(5):
+                response.extend(self._emit_task())
+            return response
         elif 'result' in msg:
             result = msg['result']
 
@@ -516,6 +544,7 @@ class SheduleServer:
                 return self._emit_task()
 
             t_id = result['id']
+            self._logger.info('New finished message: %s' % str(msg))
 
             if t_id not in self._graph.nodes():
                 self._logger.error(
@@ -578,9 +607,11 @@ class Worker:
 
     def __init__(self, config, registry):
         self._registry = registry
-        ParameterInjector(config).inject(self)
+        self._injector = ParameterInjector(config)
+        self._injector.inject(self)
         self._setup_logger()
         self._setup_ftp()
+        self._logger.info('Created new worker')
 
     def _logger_level(self):
         return getattr(
@@ -631,6 +662,7 @@ class Worker:
 
             self._ftp = DistributedStorage()
             ParameterInjector(cfg).inject(self._ftp)
+            self._logger.info('Setup FTP.\n %s' % str(cfg))
 
     def _open(self, path, mode):
         if self._ftp is not None:
@@ -679,11 +711,15 @@ class Worker:
         if t not in self._registry:
             raise ValueError('Unknown Task %s' % t)
 
+        self._logger.debug('Build task of type %s' % t)
+
         args = msg['args']
         task = self._registry[t](**args)
 
         injector = ParameterInjector(msg['params'])
         injector.inject(task)
+        self._injector.inject(task)
+        self._logger.debug('Task is created and parameter are injected.')
 
         out = task.output()
         injector.inject(out)
@@ -695,6 +731,8 @@ class Worker:
             task, msg['input']
         )
         task.input = makeEmitter(inp)
+
+        self._logger.debug('Task is successfully build.')
 
         return task
 
@@ -710,6 +748,7 @@ class Worker:
         return [Out]
 
     def startup(self):
+        self._logger.info("Send handshake.")
         return [
             {'handshake': random.uniform(0, 100000)}
         ]
@@ -718,11 +757,14 @@ class Worker:
         if 'id' in msg:
             t_id = msg['id']
             try:
+                self._logger.info('New task [%s] has arrived.' % str(t_id))
                 task = self._build_task(msg)
 
                 start_time = time.time()
 
+                self._logger.info('Run task [%s]' % str(t_id))
                 task.run()
+                self._logger.info('Finish task [%s]' % str(t_id))
 
                 taskD = {
                     'output': task.output().path,
@@ -742,4 +784,5 @@ class Worker:
             )
 
     def shutdown(self):
+        self._logger.info('Shutdown server')
         pass
