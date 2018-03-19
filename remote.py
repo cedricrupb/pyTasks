@@ -274,6 +274,7 @@ class LocalHandler:
 
 class SheduleServer:
     ftp_dir = Parameter('.')
+    home_dir = Parameter('')
     log_level = Parameter('DEBUG')
     log_file = Parameter(None)
 
@@ -408,13 +409,16 @@ class SheduleServer:
         try:
             path = output.path
 
+            local_path = os.path.join(self.home_dir.value,
+                                      SheduleServer._relative_path(path))
+
             ftp_path = os.path.join(self.ftp_dir.value,
                                     SheduleServer._relative_path(path)
                                     )
 
             if not (os.path.exists(ftp_path)
-                    and os.path.samefile(path, ftp_path)):
-                os.link(path, ftp_path)
+                    and os.path.samefile(local_path, ftp_path)):
+                os.link(local_path, ftp_path)
 
             return path
 
@@ -664,9 +668,21 @@ class Worker:
             ParameterInjector(cfg).inject(self._ftp)
             self._logger.info('Setup FTP.\n %s' % str(cfg))
 
+    def _mkdir(self, path):
+        dir_name = os.path.dirname(path)
+
+        if not os.path.isdir(dir_name):
+            os.makedirs(dir_name)
+
     def _open(self, path, mode):
         if self._ftp is not None:
             return self._ftp.open(path, mode)
+
+        path = os.path.join(self.cache_dir.value, path)
+
+        if 'w' in mode:
+            self._mkdir(path)
+
         return open(path, mode)
 
     def _rebuildTarget(self, target):
