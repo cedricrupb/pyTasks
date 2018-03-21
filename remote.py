@@ -480,6 +480,8 @@ class SheduleServer:
 
     def _update_buffer(self, t_id):
         for s in self._graph.successors(t_id):
+            if isFinish(self._graph.node[s]):
+                continue
             add = True
             for ps in self._graph.predecessors(s):
                 if not isFinish(self._graph.node[ps]):
