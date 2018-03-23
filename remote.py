@@ -277,6 +277,7 @@ class SheduleServer:
     home_dir = Parameter('')
     log_level = Parameter('DEBUG')
     log_file = Parameter(None)
+    backup = Parameter(240)
 
     def __init__(self, graph_ref, config):
         self._config = config
@@ -497,28 +498,35 @@ class SheduleServer:
         t_id = msg['id']
         t_node = self._graph.node[t_id]
 
-        if 'exception' in msg:
-            t_node['exception'] = msg['exception']
-            self._logger.error(
-                'Error for task [%s]: %s' % (t_id, t_node['exception'])
-            )
-        else:
-            t_node['finish'] = True
-            t_node['stats'] = msg['stats']
-            t_node['time'] = msg['time']
-            self._logger.info(
-                'Finished job %s after %f seconds' % (t_id, t_node['time'])
-            )
-            self._pbar.update(1)
+        if not isFinish(t_node):
+            if 'exception' in msg:
+                t_node['exception'] = msg['exception']
+                self._logger.error(
+                    'Error for task [%s]: %s' % (t_id, t_node['exception'])
+                )
+            else:
+                t_node['finish'] = True
+                t_node['stats'] = msg['stats']
+                t_node['time'] = msg['time']
+                self._logger.info(
+                    'Finished job %s after %f seconds' % (t_id, t_node['time'])
+                )
+                self._pbar.update(1)
 
         self._update_buffer(t_id)
 
     def _emit_task(self):
         while len(self._buffer) > 0:
             t_id = self._buffer.pop()
+            t_node = self._graph.node[t_id]
+
+            if 'send' in t_node:
+                continue
 
             try:
-                return [self._serialize_task(t_id)]
+                ser = [self._serialize_task(t_id)]
+                t_node['send'] = True
+                return ser
             except UnsatisfiedRequirementException:
                 trace = traceback.format_exc()
                 self._logger.error(
@@ -529,11 +537,30 @@ class SheduleServer:
 
         return []
 
+    def _backup_graph(self):
+        split = os.path.splitext(self._ref)
+        path = split[0] + '_backup' + split[1]
+        self._logger.debug(
+            'Backup graph to %s' % path
+        )
+        nx.write_gpickle(self._graph, path)
+
+    def _shedule_backup(self):
+        if 'backup_time' not in self.__dict__:
+            self.backup_time = time.time()
+
+        if time.time() - self.backup_time > self.backup.value:
+            self._backup_graph()
+            self.backup_time = time.time()
+
     def startup(self):
         self._logger.info('Startup server')
         return []
 
     def react(self, msg):
+
+        self._shedule_backup()
+
         if 'handshake' in msg:
             self._logger.info('New handshake of worker. Emit msg')
             response = []
