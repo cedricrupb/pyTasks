@@ -8,6 +8,12 @@ from .utils import containerHash
 from inspect import signature
 
 
+bar_format_ind = {
+                    'symbols_indeterminate': {'ascii': ['----{,_,">', '----{,_,*>'],  # little mouse :)
+                                              'loop': False},
+                      }
+
+
 def stats(task):
     try:
         return task.__stats__()
@@ -207,21 +213,23 @@ class TaskPlanner:
                        )
 
         stack = [task]
-        while len(stack) > 0:
-            t = stack.pop()
-            tid = TaskPlanner.taskid(t)
-            for t_n in TaskPlanner.__getrequire(t):
-                t_n, optional = TaskPlanner.__isoptional(t_n)
-                t_n, output = self.__prepTask(t_n)
-                t_n_id = TaskPlanner.taskid(t_n)
-                if t_n_id not in graph:
-                    graph.add_node(t_n_id,
-                                   task=t_n,
-                                   output=output,
-                                   finish=False)
-                    stack.append(t_n)
+        with tqdm(ascii=True, bar_format=bar_format_ind) as tt:
+            while len(stack) > 0:
+                t = stack.pop()
+                tid = TaskPlanner.taskid(t)
+                for t_n in TaskPlanner.__getrequire(t):
+                    t_n, optional = TaskPlanner.__isoptional(t_n)
+                    t_n, output = self.__prepTask(t_n)
+                    t_n_id = TaskPlanner.taskid(t_n)
+                    if t_n_id not in graph:
+                        graph.add_node(t_n_id,
+                                       task=t_n,
+                                       output=output,
+                                       finish=False)
+                        stack.append(t_n)
 
-                graph.add_edge(t_n_id, tid, optional=optional)
+                    graph.add_edge(t_n_id, tid, optional=optional)
+                    tt.update()
 
         TaskPlanner.__checkCycle(graph)
         return graph

@@ -46,9 +46,12 @@ def taskid(task):
         return task.cached_id
 
 
-def isFinish(taskNode):
+def isFinish(taskNode, prefix='.'):
+    path = taskNode['output'].path
+    path = os.path.join(prefix, path)
+
     return taskNode['finish'] or 'exception' in taskNode\
-           or taskNode['output'].exists()
+           or os.path.isfile(path)
 
 
 def buildRegistry(prefix=None):
@@ -328,7 +331,8 @@ class SheduleServer:
 
         for n in self._graph:
             n_node = self._graph.node[n]
-            if isFinish(n_node):
+            if isFinish(n_node, self.home_dir.value):
+                n_node['finish'] = True
                 self._pbar.update(1)
             else:
                 add = True
@@ -481,11 +485,11 @@ class SheduleServer:
 
     def _update_buffer(self, t_id):
         for s in self._graph.successors(t_id):
-            if isFinish(self._graph.node[s]):
+            if isFinish(self._graph.node[s], self.home_dir.value):
                 continue
             add = True
             for ps in self._graph.predecessors(s):
-                if not isFinish(self._graph.node[ps]):
+                if not isFinish(self._graph.node[ps], self.home_dir.value):
                     add = False
                     break
             if add:
@@ -534,6 +538,7 @@ class SheduleServer:
                 )
                 node = self._graph.node[t_id]
                 node['exception'] = trace
+                self._update_buffer(t_id)
 
         return []
 
@@ -728,10 +733,18 @@ class Worker:
 
         return target
 
+    @staticmethod
+    def _is_optional(dependency):
+        if isinstance(dependency, Optional):
+            return dependency.optional, True
+        return dependency, False
+
     def _build_input(self, task, inputList):
-        require = [
-            t.output() for t in enumerateable(task.require())
-        ]
+        require = []
+
+        for t in enumerateable(task.require()):
+            t, opt = Worker._is_optional(t)
+            require.append(t.output())
 
         if len(require) != len(inputList):
             raise ValueError('Input has to have the same size as require' +
