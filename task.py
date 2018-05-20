@@ -375,6 +375,15 @@ class TaskExecutor:
             end_time = time.time() - start_time
             taskNode['time'] = end_time
 
+    def executeController(self, controller):
+        last_task = 'start'
+        controller.load_graph(nx.DiGraph())
+        while controller.progress(last_task)\
+                and controller.listen != '_':
+            last_task = controller.listen
+            self.executePlan(controller.graph)
+        controller.shutdown()
+
 
 class TaskProgressHelper:
 
@@ -405,6 +414,9 @@ class TaskProgressHelper:
 
     def output(self, task):
         if isinstance(task, Task):
-            task = TaskPlanner.taskid(task)
+            task = self.get_task_id(task)
 
         return self.__plan.nodes[task]['output']
+
+    def get_task_id(self, task):
+        return TaskPlanner.taskid(task)

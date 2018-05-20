@@ -47,11 +47,14 @@ def taskid(task):
 
 
 def isFinish(taskNode, prefix='.'):
-    path = taskNode['output'].path
-    path = os.path.join(prefix, path)
+    output = taskNode['output']
+    if hasattr('path', output):
+        path = taskNode['output'].path
+        path = os.path.join(prefix, path)
+        if os.path.isfile(path):
+            return True
 
-    return taskNode['finish'] or 'exception' in taskNode\
-           or os.path.isfile(path)
+    return taskNode['finish'] or 'exception' in taskNode
 
 
 def buildRegistry(prefix=None):
@@ -282,12 +285,15 @@ class SheduleServer:
     log_file = Parameter(None)
     backup = Parameter(240)
 
-    def __init__(self, graph_ref, config):
+    def __init__(self, graph_ref, config, controller=None):
         self._config = config
         self._ref = graph_ref
-        self._graph = nx.read_gpickle(self._ref)
         self._injector = ParameterInjector(config)
         self._injector.inject(self)
+        self._controller = controller
+        self._graph = nx.read_gpickle(self._ref)
+        if self._controller is not None:
+            self._controller.load_graph(controller)
         self._setup_logger()
         self._init_buffer()
 
@@ -438,7 +444,7 @@ class SheduleServer:
         in_ref = [None] * len(task_in)
 
         for i, t_i in enumerate(task_in):
-            if t_i is not None:
+            if t_i is not None and hasattr('path', t_i):
                 in_ref[i] = self._cp_input(t_i)
 
         return in_ref
@@ -451,6 +457,7 @@ class SheduleServer:
         try:
             return t_out.path
         except AttributeError:
+            return None
             raise ValueError(
                 '%s has to provide a path attribute' % str(t_out)
             )
@@ -474,6 +481,8 @@ class SheduleServer:
         self._logger.debug(
             'Save graph to %s' % self._ref
         )
+        if self._controller is not None:
+            self._controller.shutdown()
         nx.write_gpickle(self._graph, self._ref)
 
     def shutdown(self):
@@ -516,6 +525,12 @@ class SheduleServer:
                     'Finished job %s after %f seconds' % (t_id, t_node['time'])
                 )
                 self._pbar.update(1)
+                if self._controller is not None and\
+                        self._controller.progress(t_id):
+                        self._logger.debug(
+                            'Controller created a new task.'
+                        )
+                        self._init_buffer()
 
         self._update_buffer(t_id)
 
@@ -824,8 +839,14 @@ class Worker:
                 task.run()
                 self._logger.info('Finish task [%s]' % str(t_id))
 
+                out_path = None
+                out = task.output()
+
+                if hasattr("path", out):
+                    out_path = out.path
+
                 taskD = {
-                    'output': task.output().path,
+                    'output': out_path,
                     'stats': stats(task),
                     'time': time.time() - start_time
                 }
