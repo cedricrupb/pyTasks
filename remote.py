@@ -48,7 +48,7 @@ def taskid(task):
 
 def isFinish(taskNode, prefix='.'):
     output = taskNode['output']
-    if hasattr('path', output):
+    if hasattr(output, 'path'):
         path = taskNode['output'].path
         path = os.path.join(prefix, path)
         if os.path.isfile(path):
@@ -444,7 +444,7 @@ class SheduleServer:
         in_ref = [None] * len(task_in)
 
         for i, t_i in enumerate(task_in):
-            if t_i is not None and hasattr('path', t_i):
+            if t_i is not None and hasattr(t_i, 'path'):
                 in_ref[i] = self._cp_input(t_i)
 
         return in_ref
@@ -842,7 +842,7 @@ class Worker:
                 out_path = None
                 out = task.output()
 
-                if hasattr("path", out):
+                if hasattr(out, 'path'):
                     out_path = out.path
 
                 taskD = {
