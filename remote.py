@@ -335,19 +335,31 @@ class SheduleServer:
         self._pbar = tqdm(total=len(self._graph))
         self._buffer = []
 
-        for n in self._graph:
+        seen = set([])
+        stack = [(n, True) for (n, c) in self._graph.out_degree() if c == 0]
+
+        while len(stack) > 0:
+            n, state = stack.pop()
             n_node = self._graph.node[n]
+
+            if n in seen:
+                continue
+
+            seen.add(n)
+
             if isFinish(n_node, self.home_dir.value):
                 n_node['finish'] = True
                 self._pbar.update(1)
-            else:
-                add = True
-                for p in self._graph.predecessors(n):
-                    if not isFinish(self._graph.node[p]):
-                        add = False
-                        break
-                if add:
-                    self._buffer.append(n)
+                state = False
+
+            add = state
+            for p in self._graph.predecessors(n):
+                stack.append((p, state))
+                if add and not isFinish(self._graph.node[p]):
+                    add = False
+
+            if add:
+                self._buffer.append(n)
 
         self._logger.debug(
             'Finished initializing buffer'

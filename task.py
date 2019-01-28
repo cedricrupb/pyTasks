@@ -246,8 +246,9 @@ class UnsatisfiedRequirementException(Exception):
 
 class TaskExecutor:
 
-    def __init__(self, planner=TaskPlanner()):
+    def __init__(self, planner=TaskPlanner(), prefix=''):
         self.planner = planner
+        self.prefix = prefix
 
     def __prepTask(self, task, inp, output):
         oldI = task.input
@@ -275,6 +276,7 @@ class TaskExecutor:
             optional = optionals[i]
             if graph.node[p]['finish']:
                 o = graph.node[p]['output']
+                o.sandBox = self.prefix
                 li.append(o)
             elif optional:
                 li.append(None)
@@ -285,28 +287,29 @@ class TaskExecutor:
         return li
 
     @staticmethod
-    def __isFinish(taskNode):
+    def __isFinish(taskNode, prefix=''):
+        taskNode['output'].sandBox = prefix
         return taskNode['finish'] or 'exception' in taskNode\
-               or taskNode['output'].exists()
+                or taskNode['output'].exists()
 
     @staticmethod
-    def __no_income(plan, task):
+    def __no_income(plan, task, prefix=''):
         taskNode = plan.node[task]
-        if TaskExecutor.__isFinish(taskNode):
+        if TaskExecutor.__isFinish(taskNode, prefix):
             taskNode['finish'] = True
             taskNode['output'].mode = 'r'
             return False
 
         size = 0
         for p in plan.predecessors(task):
-            if not TaskExecutor.__isFinish(plan.node[p]):
+            if not TaskExecutor.__isFinish(plan.node[p], prefix):
                 size += 1
 
         return size == 0
 
     @staticmethod
-    def __to_shedule(plan):
-        S = [n for n in plan if TaskExecutor.__no_income(plan, n)]
+    def __to_shedule(plan, prefix=''):
+        S = [n for n in plan if TaskExecutor.__no_income(plan, n, prefix)]
 
         while len(S) > 0:
             act = S.pop()
@@ -314,7 +317,7 @@ class TaskExecutor:
             yield act
 
             for s in plan.successors(act):
-                if TaskExecutor.__no_income(plan, s):
+                if TaskExecutor.__no_income(plan, s, prefix):
                     S.append(s)
 
     def executeTask(self, task):
@@ -323,7 +326,7 @@ class TaskExecutor:
     def executePlan(self, plan):
         TaskExecutor.__checkCycle(plan)
 
-        for job in tqdm(TaskExecutor.__to_shedule(plan), total=len(plan)):
+        for job in tqdm(TaskExecutor.__to_shedule(plan, self.prefix), total=len(plan)):
 
             taskNode = plan.node[job]
             task = taskNode['task']
