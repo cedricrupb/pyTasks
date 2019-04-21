@@ -2,16 +2,11 @@ from abc import ABCMeta, abstractmethod
 import networkx as nx
 import networkx.algorithms.dag as dag
 import time
+from datetime import datetime
 import traceback
 from tqdm import tqdm
 from .utils import containerHash
 from inspect import signature
-
-
-bar_format_ind = {
-                    'symbols_indeterminate': {'ascii': ['----{,_,">', '----{,_,*>'],  # little mouse :)
-                                              'loop': False},
-                      }
 
 
 def stats(task):
@@ -33,40 +28,6 @@ class Parameter:
 
     def __repr__(self):
         return 'Parameter(%s)' % (str(self.value))
-
-
-class ParameterInjector:
-
-    def __init__(self, config):
-        self.__config = config
-
-    @staticmethod
-    def __collectParams(d):
-        params = []
-        for k, v in d.items():
-            if isinstance(v, Parameter):
-                params.append(k)
-        return params
-
-    def inject(self, obj):
-        if self.__config is None:
-            return
-
-        name = obj.__class__.__name__
-
-        if name not in self.__config:
-            return
-
-        d = self.__config[name]
-
-        params = ParameterInjector.__collectParams(obj.__dict__)
-        params.extend(
-                ParameterInjector.__collectParams(obj.__class__.__dict__)
-                )
-
-        for p in params:
-            if p in d:
-                obj.__dict__[p] = Parameter(d[p])
 
 
 class Task:
@@ -136,19 +97,50 @@ class Task:
         return self
 
 
-class TargetTask(Task):
+class ParameterInjector:
 
-    def __init__(self, target):
-        self.__target = target
+    def __init__(self, config):
+        self.__config = config
 
-    def require(self):
-        pass
+    @staticmethod
+    def __collectParams(d):
+        params = []
+        for k, v in d.items():
+            if isinstance(v, Parameter):
+                params.append(k)
+        return params
 
-    def run(self):
-        pass
+    def inject(self, obj):
+        if self.__config is None:
+            return
 
-    def output(self):
-        return self.__target
+        name = obj.__class__.__name__
+
+        if name not in self.__config:
+            return
+
+        d = self.__config[name]
+
+        params = ParameterInjector.__collectParams(obj.__dict__)
+        params.extend(
+                ParameterInjector.__collectParams(obj.__class__.__dict__)
+                )
+
+        for p in params:
+            if p in d:
+                obj.__dict__[p] = Parameter(d[p])
+
+
+class LocalLogHandler:
+
+    def handle(self, msg):
+        if 'message' in msg:
+            timestamp = msg['timestamp']
+            timestamp = datetime.fromtimestamp(timestamp)
+            timestamp = timestamp.strftime("%Y-%m-%d %H:%M:%S")
+            print('[%s] %s' % (timestamp, str(msg['message'])))
+        else:
+            print('>> %s' % str(msg))
 
 
 class TaskPlanner:
@@ -213,7 +205,7 @@ class TaskPlanner:
                        )
 
         stack = [task]
-        with tqdm(ascii=True, bar_format=bar_format_ind) as tt:
+        with tqdm(ascii=True) as tt:
             while len(stack) > 0:
                 t = stack.pop()
                 tid = TaskPlanner.taskid(t)
@@ -357,6 +349,7 @@ class TaskExecutor:
                 continue
 
             task, i, o = self.__prepTask(task, inputList, taskNode['output'])
+            task.log_handler = LocalLogHandler()
 
             start_time = time.time()
 

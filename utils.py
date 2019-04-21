@@ -44,3 +44,21 @@ def tick(obj):
             raise TimeOutException()
     except AttributeError:
         pass
+
+
+def log(obj, msg):
+    try:
+        handler = obj.log_handler
+
+        if isinstance(msg, str):
+            msg = {'message': msg}
+
+        if not isinstance(msg, dict):
+            return
+
+        if 'timestamp' not in msg:
+            msg['timestamp'] = time.time()
+
+        handler.handle(msg)
+    except AttributeError:
+        pass

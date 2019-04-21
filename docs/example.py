@@ -5,6 +5,7 @@ import json
 import os
 import time
 import networkx as nx
+from .utils import log
 
 
 class FibTask(Task):
@@ -20,7 +21,7 @@ class FibTask(Task):
         return ManagedTarget(self)
 
     def run(self):
-        print('Run Fib %d' % self.__number)
+        log(self, 'Run Fib %d' % self.__number)
         if self.__number < 2:
             with self.output() as o:
                 o.emit(1)
@@ -89,8 +90,9 @@ class CombTask(Task):
 
 if __name__ == '__main__':
 
-    with open('./param_test.json', 'r') as cfg:
-        config = json.load(cfg)
+    # with open('./param_test.json', 'r') as cfg:
+    #    config = json.load(cfg)
+    config = {}
 
     injector = ParameterInjector(config)
     task = FibTask(10)
